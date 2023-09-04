@@ -11,9 +11,17 @@ from fastapi import FastAPI, UploadFile, Form
 from fastapi.responses import JSONResponse
 from tensorflow.keras.models import load_model
 import rembg  
+from fastapi.middleware.cors import CORSMiddleware
 import time
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # You can restrict this to specific origins if needed
+    allow_methods=["*"],  # You can restrict HTTP methods (e.g., ["POST", "GET"]) if needed
+    allow_headers=["*"],  # You can restrict headers if needed
+)
 
 model_path = "model_1.h5"
 model_path_2 = "model_2.h5"
