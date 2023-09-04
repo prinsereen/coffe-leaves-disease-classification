@@ -3,7 +3,6 @@ import io
 import numpy as np
 import tensorflow as tf
 from fastapi import FastAPI, UploadFile, File
-from pyngrok import ngrok
 from PIL import Image
 from rembg import remove
 import cv2
