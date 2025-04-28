@@ -1,67 +1,74 @@
 import os
 import io
+import time
 import numpy as np
 import tensorflow as tf
-from fastapi import FastAPI, UploadFile, File
-from PIL import Image
-from rembg import remove
-import cv2
 from fastapi import FastAPI, UploadFile, Form
 from fastapi.responses import JSONResponse
-from tensorflow.keras.models import load_model
-import rembg  
 from fastapi.middleware.cors import CORSMiddleware
-import time
+from PIL import Image
+import cv2
+from rembg import remove
 
 app = FastAPI()
 
+# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # You can restrict this to specific origins if needed
-    allow_methods=["*"],  # You can restrict HTTP methods (e.g., ["POST", "GET"]) if needed
-    allow_headers=["*"],  # You can restrict headers if needed
+    allow_origins=["*"],  # Ganti ini kalau mau lebih ketat
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-model_path = "model_1.h5"
-model_path_2 = "model_2.h5"
-model_1 = tf.keras.models.load_model(model_path)
-model_2 = tf.keras.models.load_model(model_path_2)
+# Load Models
+model_1 = tf.keras.models.load_model("model_1.h5")
+model_2 = tf.keras.models.load_model("model_2.h5")
 
+# Class names
 class_names = ['Miner', 'Nodisease', 'Phoma', 'Rust']
 
-def predict_image(image_data, model_type):
+# Prediction function
+def predict_image(image_data: bytes, model_type: str):
+    # Pilih model
+    model = model_1 if model_type == "model_1" else model_2
 
-    if model_type == "model_1":
-      model = model_1
-    elif model_type == "model_2":
-      model = model_2
-    
+    # Buka gambar
     image = Image.open(io.BytesIO(image_data))
     temp = np.array(image)
 
+    # Remove background
     temp = remove(temp)
 
+    # Pastikan hanya 3 channel (RGB)
     if temp.shape[-1] == 4:
         temp = temp[:, :, :3]
 
+    # Resize ke ukuran model
     temp = cv2.resize(temp, (150, 150))
-    result_image = Image.fromarray(temp)
 
+    # Normalize pixel (0-1)
+    temp = temp / 255.0
+
+    # Prediksi
+    temp = np.expand_dims(temp, axis=0)  # Tambah batch dimension
     start_time = time.time()
-    prediction = model.predict(np.expand_dims(result_image, axis=0))
+    prediction = model.predict(temp)
     end_time = time.time()
 
-    percentages = [round(p * 100, 2) for p in prediction[0]]
-
+    # Convert hasil prediksi
+    percentages = [float(round(p * 100, 2)) for p in prediction[0]]
     result = {class_names[i]: percentages[i] for i in range(len(class_names))}
-    result['hasil'] = class_names[percentages.index(max(percentages))]
+    result['hasil'] = class_names[int(np.argmax(percentages))]
     result['lama_prediksi'] = f"{(end_time - start_time):.5f} seconds"
 
     return result
 
+# API Endpoint
 @app.post("/predict/")
-async def predict(file: UploadFile, model_type: str = Form(...)):
-    image_data = await file.read()
-    prediction_result = predict_image(image_data, model_type)
-
-    return {"prediction": prediction_result}
+async def predict(file: UploadFile = Form(...), model_type: str = Form(...)):
+    try:
+        image_data = await file.read()
+        prediction_result = predict_image(image_data, model_type)
+        return JSONResponse(content={"success": True, "prediction": prediction_result})
+    except Exception as e:
+        return JSONResponse(content={"success": False, "error": str(e)})
